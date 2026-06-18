@@ -72,3 +72,42 @@ This project has no code to generate, so AI tools aren't used for implementation
 **Annotation assistance.** I will use an LLM (Claude) to pre-label batches of posts before I review them, rather than annotating all 200 cold, given the time this would otherwise take. Each batch (roughly 20–30 posts) gets the full label definitions, precedence rule, and edge-case log as instructions, plus the post's full text (headline and comments), and returns one label per post. For disclosure, every example in the dataset gets two extra columns: `annotation_source` (`ai_prelabel_reviewed` or `human_only`, plus the model name/version used) and `overridden` (whether my review changed the AI's suggested label, and what the AI originally proposed). To guard against just rubber-stamping the AI's suggestion, I'll do a blind spot-check every ~20 examples: label a handful myself before looking at the pre-label, then compare, to get a rough read on how much anchoring bias is creeping into the review process.
  
 **Failure analysis.** After training and evaluating the model on held-out data, I'll compile the list of misclassified examples (true label, predicted label, full post text) and give it to an AI tool to look for patterns: which label pairs get confused most often, whether errors cluster around the same hard boundaries already logged in Section 3, and whether there's a spurious heuristic at play — e.g., the model defaulting to Drive-By Drop on any short thread regardless of content, or to High-Effort Write-up on any long post regardless of whether it's actually narrative versus just a long templated list. I will not take the AI's claimed patterns at face value: for each pattern it proposes, I'll spot-check a random sample of the specific examples it cites by re-reading the actual post text myself, and I'll independently re-derive any quantitative claim (e.g., actually cross-tabulating errors against post length or comment count rather than trusting a qualitative description of the trend). Only patterns I can confirm this way go into the evaluation write-up — the AI's output here is treated as a list of hypotheses to check, not a finding to report directly.
+
+---
+
+## 8. Error Pattern Analysis (Extra Feature)
+
+After evaluating the fine-tuned model on 30 held-out test examples, I identified three systematic error patterns that go beyond individual misclassifications:
+
+**Pattern 1: Emotional/Personal Language → Analytical Misclassification (5/5 Human-Interest errors)**
+Posts with strong emotional markers (personal anecdotes, empathy, fan reactions) are consistently predicted as Analytical despite being labeled Human-Interest. Examples: "I am both super hyped for their game this afternoon, and extremely anxious LOL" (predicted Analytical); "Unbelievable scenes in DR Congo... This is what its all about man" (predicted Analytical); Leo Messi's quote about crying (predicted Analytical).
+- **Root cause**: The model learned to associate any non-trivial language or content with "Analytical reasoning," without distinguishing between emotional/anecdotal content and evidence-based argument. Training had only 6 Human-Interest examples vs. 5 Analytical, and Human-Interest's soft markers (emotion, empathy) were drowned out by Analytical's lexical signal (facts, numbers, cited precedents).
+
+**Pattern 2: Factual Content Without Reasoning → Analytical Misclassification (6/8 Drive-By errors)**
+Posts containing facts or numbers but lacking substantive reasoning are misclassified as Analytical. Examples: "[FotMob] Luis Díaz is the second Colombian since 1962" (a fact without reasoning, predicted Analytical); "Enzo Fernandez for £120m" (a transfer fee, predicted Analytical); Zidane's jersey-signing anecdote (predicted Analytical).
+- **Root cause**: The model treats "contains a checkable fact" as synonymous with "Analytical/Speculative," missing the definition of Analytical which requires *reasoning about* facts, not just stating them. The boundary between Drive-By (facts + no reasoning) and Analytical (facts + reasoning) requires understanding *comment context*, which is hard with only 29 training examples.
+
+**Pattern 3: Narrative/Researched Content in Non-Preview Format → Analytical Misclassification (0/5 High-Effort errors)**
+High-Effort posts that aren't World Cup previews, or are previews outside the standard series format, are completely missed. Examples: "[OC] I made an interactive map of the birthplaces of all players..." (original research, predicted Analytical); "From Shamrock Rovers to defying Spain..." (narrative deep-dive, predicted Analytical).
+- **Root cause**: All 11 High-Effort training examples are World Cup 2026 previews from the same series, sharing identical templates ("[World Cup 2026 Preview] [Team Name]: [Subtitle]"). The model learned to recognize *this specific genre template* rather than the underlying concept "narrative content" or "researched writing." When test examples deviate from the template, the model has no learned signal and defaults to Analytical.
+
+**Low Confidence Across All Errors**: All misclassified predictions have confidence between 0.30–0.33, barely above random (0.25 for 4 classes). This indicates the model is not making confident discriminations but rather outputting a learned default behavior, confirming it didn't learn robust class boundaries.
+
+**Summary**: The fine-tuned model treats "any substantive-looking content" (emotions, facts, research) as Analytical, failing to discriminate between different *types* of substantive content. This is a symptom of insufficient training data and class imbalance, not annotation error.
+
+---
+
+## 9. Extended Features: Interactive Classification Interface
+
+**Simple Interactive Interface (simple_interface.py):** A Jupyter notebook widget interface allowing users to classify new posts in real-time without re-running evaluation cells. Users enter a post in a textarea, click a "Classify Post" button, and receive the predicted label and confidence score. This enables:
+
+- **Rapid testing** of new posts from r/soccer without manual annotation overhead.
+- **Qualitative debugging** — users can input edge cases and observe whether the model's predictions align with expectations, feeding manual spot-checks for robustness before deployment.
+- **Exploration and validation** — stakeholders can test the classifier on their own posts of interest before committing to production use.
+
+**Implementation**: Built using `ipywidgets.Textarea`, `ipywidgets.Button`, and `ipywidgets.Output` in a Jupyter environment. Reuses the fine-tuned trainer and tokenizer from the notebook, avoiding duplicated code. Returns both label and confidence to help users calibrate trust in uncertain predictions.
+
+**Limitations**: Relies on the fine-tuned model's performance (36.67% accuracy on test set), so predictions reflect the model's learned boundaries, not ground truth. For production use, recommendations would be:
+- Display confidence thresholds so users can filter uncertain predictions (e.g., confidence < 0.50 → "uncertain, review manually").
+- Log edge-case inputs for future retraining on under-represented classes.
+- Use the Groq zero-shot baseline as a secondary ranker for predictions with low confidence from the fine-tuned model.

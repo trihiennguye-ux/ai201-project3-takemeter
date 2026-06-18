@@ -1,0 +1,13 @@
+{
+  "baseline_accuracy": 0.6667,
+  "finetuned_accuracy": 0.3667,
+  "improvement": -0.3,
+  "test_set_size": 30,
+  "label_map": {
+    "High-Effort Write-up": 0,
+    "Drive-By Drop": 1,
+    "Human-Interest/Color": 2,
+    "Analytical/Speculative Take": 3
+  },
+  "model": "distilbert-base-uncased"
+}
