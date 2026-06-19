@@ -1,7 +1,7 @@
 {
-  "baseline_accuracy": 0.6667,
-  "finetuned_accuracy": 0.3667,
-  "improvement": -0.3,
+  "baseline_accuracy": 0.7,
+  "finetuned_accuracy": 0.6667,
+  "improvement": -0.0333,
   "test_set_size": 30,
   "label_map": {
     "High-Effort Write-up": 0,

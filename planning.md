@@ -44,7 +44,7 @@ When a new configuration doesn't match any logged rule, I'll flag it for a secon
 
 I'll pull posts directly from r/soccer's own listings (old.reddit `.json` pages or an equivalent export) across multiple sort orders — hot, top-day, top-week, and new — rather than just "hot," since hot alone overrepresents viral banter and underrepresents quieter analytical threads. I'll deliberately oversample from known high-effort formats (the World Cup preview series, posts flagged "OC," Athletic/Guardian-style deep-dive links), since High-Effort Write-up essentially never shows up in a generic random sample.
 
-Target: roughly 50 examples per label for an initial 200-post set. I expect natural imbalance going in — Drive-By Drop will likely be the majority class in any unweighted sample, since most threads really are just banter, while High-Effort Write-up will be the rarest naturally occurring label.
+Target: roughly 30-50 examples per label for an initial 200-post set. I expect natural imbalance going in — Drive-By Drop will likely be the majority class in any unweighted sample, since most threads really are just banter, while High-Effort Write-up will be the rarest naturally occurring label.
 
 If a label is still underrepresented after 200 examples, I won't pad it with borderline cases just to hit the quota — that would teach a model the wrong boundary. Instead: go targeted rather than random for that specific label (pull directly from the formats/flairs known to produce it), and if it still won't reach count even then, treat that as real information rather than a collection failure — it may mean the label is genuinely rare enough that it should be merged into a neighboring category, or that the definition needs slight loosening, rather than forcing artificial balance.
 
@@ -76,37 +76,33 @@ This project has no code to generate, so AI tools aren't used for implementation
 ---
 
 ## 8. Error Pattern Analysis (Extra Feature)
-
-After evaluating the fine-tuned model on 30 held-out test examples, I identified three systematic error patterns that go beyond individual misclassifications:
-
-**Pattern 1: Emotional/Personal Language → Analytical Misclassification (5/5 Human-Interest errors)**
-Posts with strong emotional markers (personal anecdotes, empathy, fan reactions) are consistently predicted as Analytical despite being labeled Human-Interest. Examples: "I am both super hyped for their game this afternoon, and extremely anxious LOL" (predicted Analytical); "Unbelievable scenes in DR Congo... This is what its all about man" (predicted Analytical); Leo Messi's quote about crying (predicted Analytical).
-- **Root cause**: The model learned to associate any non-trivial language or content with "Analytical reasoning," without distinguishing between emotional/anecdotal content and evidence-based argument. Training had only 6 Human-Interest examples vs. 5 Analytical, and Human-Interest's soft markers (emotion, empathy) were drowned out by Analytical's lexical signal (facts, numbers, cited precedents).
-
-**Pattern 2: Factual Content Without Reasoning → Analytical Misclassification (6/8 Drive-By errors)**
-Posts containing facts or numbers but lacking substantive reasoning are misclassified as Analytical. Examples: "[FotMob] Luis Díaz is the second Colombian since 1962" (a fact without reasoning, predicted Analytical); "Enzo Fernandez for £120m" (a transfer fee, predicted Analytical); Zidane's jersey-signing anecdote (predicted Analytical).
-- **Root cause**: The model treats "contains a checkable fact" as synonymous with "Analytical/Speculative," missing the definition of Analytical which requires *reasoning about* facts, not just stating them. The boundary between Drive-By (facts + no reasoning) and Analytical (facts + reasoning) requires understanding *comment context*, which is hard with only 29 training examples.
-
-**Pattern 3: Narrative/Researched Content in Non-Preview Format → Analytical Misclassification (0/5 High-Effort errors)**
-High-Effort posts that aren't World Cup previews, or are previews outside the standard series format, are completely missed. Examples: "[OC] I made an interactive map of the birthplaces of all players..." (original research, predicted Analytical); "From Shamrock Rovers to defying Spain..." (narrative deep-dive, predicted Analytical).
-- **Root cause**: All 11 High-Effort training examples are World Cup 2026 previews from the same series, sharing identical templates ("[World Cup 2026 Preview] [Team Name]: [Subtitle]"). The model learned to recognize *this specific genre template* rather than the underlying concept "narrative content" or "researched writing." When test examples deviate from the template, the model has no learned signal and defaults to Analytical.
-
-**Low Confidence Across All Errors**: All misclassified predictions have confidence between 0.30–0.33, barely above random (0.25 for 4 classes). This indicates the model is not making confident discriminations but rather outputting a learned default behavior, confirming it didn't learn robust class boundaries.
-
-**Summary**: The fine-tuned model treats "any substantive-looking content" (emotions, facts, research) as Analytical, failing to discriminate between different *types* of substantive content. This is a symptom of insufficient training data and class imbalance, not annotation error.
-
+ 
+After evaluating the fine-tuned model on 30 held-out test examples (66.67% accuracy, 10/30 misclassified), I identified three systematic error patterns that go beyond individual misclassifications:
+ 
+**Pattern 1: Human-Interest/Color → Drive-By Drop Misclassification (5/5 Human-Interest errors, 100% of the class)**
+Every true Human-Interest post in the test set was predicted Drive-By Drop, several at high confidence. Examples: "I am both super hyped for their game this afternoon, and extremely anxious LOL" (predicted Drive-By Drop, confidence 0.85); England and Croatia fans booing at the hydration break, comments about singing "Mr Brightside" (predicted Drive-By Drop, confidence 0.81); "Unbelievable scenes in DR Congo... This is what its all about man" (predicted Drive-By Drop, confidence 0.57).
+- **Root cause**: the model appears to have learned "short, casually-phrased post with no cited evidence" as the defining feature of Drive-By Drop — which also describes most Human-Interest posts, since emotional reactions and anecdotes are usually short and casual too. Training had 21 Human-Interest examples vs. 50 Drive-By Drop examples, so the model defaults to the larger class whenever a post has Drive-By Drop's surface features (brevity, casual tone), regardless of whether it also carries Human-Interest's actual signal (personal/emotional language). The high confidence on several of these (0.81, 0.85) shows this isn't hesitation — it's a confidently learned, wrong rule.
+**Pattern 2: Analytical/Speculative Take → Drive-By Drop Misclassification (3/10 Analytical errors)**
+Posts that open with a snappy, banter-like headline but build a real argument in the comments are misclassified as Drive-By Drop. Examples: "England [1] - 0 Croatia - Harry Kane 12'... Stop the stutter mate" (predicted Drive-By Drop, confidence 0.49); "5. Elye Wahi arrested for alleged fixing offences..." with a comment citing the Emmanuel Clase MLB precedent (predicted Drive-By Drop, confidence 0.46); "All the patches on Messi's shirt and their meanings" (predicted Drive-By Drop, confidence 0.63).
+- **Root cause**: the model appears to weight the headline's casual tone heavily and under-weight the comment section, missing that Analytical requires *reasoning about* evidence in the comments, not a serious-sounding headline. This is the mirror image of Pattern 1 — both directions funnel into Drive-By Drop, the largest training class (50/140).
+**Pattern 3: Drive-By Drop → Analytical/Speculative Take Misclassification (2/10 Drive-By Drop errors)**
+Posts containing a sourced factual citation that's actually just a standalone trivia drop, not evidence for an argument, are misclassified as Analytical. Examples: "[FotMob] Luis Díaz is the second Colombian since 1962... to score and assist" (predicted Analytical, confidence 0.61); "Iraq 0-1 Norway - Erling Haaland 29'... Give the man a sniff" (predicted Analytical, confidence 0.54).
+- **Root cause**: the model treats any number/date/named-source citation as a strong Analytical signal on its own, without checking whether the comments actually reason about that fact or just react to it. This is the smallest of the three patterns (2/30 test examples), confirming the Drive-By ↔ Analytical boundary is mostly, if imperfectly, learned — unlike the Human-Interest boundary, which failed completely.
+**Confidence Is Not Uniformly Low**: confidence on the 10 errors ranges from 0.44 to 0.85, not clustered near the 0.25 random-chance baseline for 4 classes. The highest-confidence errors (0.81, 0.85) are both Human-Interest posts pulled into Drive-By Drop — the model is confidently applying a learned-but-wrong rule there, not hedging. Lower-confidence errors (0.44–0.61) cluster around posts that genuinely mix signals (a trivia-style opening line attached to either an emotional payload or a real argument).
+ 
+**Summary**: the fine-tuned model treats "short and casually phrased" as the defining signature of Drive-By Drop, which correctly separates most true Drive-By Drop posts from Analytical ones but incorrectly swallows the entire Human-Interest class, since Human-Interest posts share Drive-By Drop's brevity and casual tone. High-Effort Write-up, by contrast, is learned perfectly (5/5) despite having the smallest training set (20 examples) — its distinctive World Cup preview template gives the model a clean signal that the Human-Interest/Drive-By boundary lacks. This points to a targeted fix (more Human-Interest examples specifically near the Drive-By boundary, or a sharper definitional rule between the two) rather than a generic "more data across all classes" fix.
+ 
 ---
-
+ 
 ## 9. Extended Features: Interactive Classification Interface
-
+ 
 **Simple Interactive Interface (simple_interface.py):** A Jupyter notebook widget interface allowing users to classify new posts in real-time without re-running evaluation cells. Users enter a post in a textarea, click a "Classify Post" button, and receive the predicted label and confidence score. This enables:
-
+ 
 - **Rapid testing** of new posts from r/soccer without manual annotation overhead.
 - **Qualitative debugging** — users can input edge cases and observe whether the model's predictions align with expectations, feeding manual spot-checks for robustness before deployment.
 - **Exploration and validation** — stakeholders can test the classifier on their own posts of interest before committing to production use.
-
 **Implementation**: Built using `ipywidgets.Textarea`, `ipywidgets.Button`, and `ipywidgets.Output` in a Jupyter environment. Reuses the fine-tuned trainer and tokenizer from the notebook, avoiding duplicated code. Returns both label and confidence to help users calibrate trust in uncertain predictions.
-
+ 
 **Limitations**: Relies on the fine-tuned model's performance (36.67% accuracy on test set), so predictions reflect the model's learned boundaries, not ground truth. For production use, recommendations would be:
 - Display confidence thresholds so users can filter uncertain predictions (e.g., confidence < 0.50 → "uncertain, review manually").
 - Log edge-case inputs for future retraining on under-represented classes.
